@@ -2,29 +2,19 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <string.h>
 #include <sys/time.h>
-
-
+#include <string.h>
 #include <iostream>
 #include <string>
-
-#include <strings.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <unistd.h>
 #include <fstream>
-#include <time.h>
 #include <stdint.h>
-#include <pthread.h>
 #include <map>
-
-//#include <string>
 
 #define MAX_SIZE 4096
 #define MAX_PENDING 5
@@ -35,15 +25,34 @@ using namespace std;
 #define HEIGHT 21
 #define PADLX 1
 #define PADRX WIDTH - 2
-//Logging 
-void printLog(char *message){
+
+/***** Global Variables *****/
+int recv_refresh;
+// Global variables recording the state of the game
+// Position of ball
+int ballX, ballY;
+// Movement of ball
+int dx, dy;
+// Position of paddles
+int padLY, padRY;
+// Player scores
+int scoreL, scoreR;
+// ncurses window
+WINDOW *win;
+
+/***** Helper Functions *****/
+
+/* Logging Function */ 
+void printLog(string message){
+    const char* messageChar = message.c_str();
     FILE *f = fopen("log", "a");
-    fprintf(f,"%s\n",message);
+    fprintf(f,"%s\n", messageChar);
     fclose(f);
 }
 
-int connectHost(int port){
-    //Networking code
+int host_player(int port, int refresh) {
+    
+    // Networking code
     struct sockaddr_in sock;
     // Clear memory location
     bzero((char*) &sock, sizeof(sock));
@@ -56,27 +65,26 @@ int connectHost(int port){
 
     /* Set up socket */
     int sockfd;
-    
     if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Socket failed.");
+        printLog("Socket failed.");
         return 1;
     }
 
     /* Set socket options */
     int opt = 1;
     if ((setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,(char*)&opt, sizeof(int))) < 0) {
-        perror("Setting socket options failed.");
+        printLog("Setting socket options failed.");
         return 1;
     }
     /* Bind */ 
     if ((bind(sockfd, (struct sockaddr*) &sock, sizeof(sock))) < 0) {
-        perror("Bind failed.");
+        printLog("Bind failed.");
         return 1;
     }
 
     /* Listen */
     if ((listen(sockfd, MAX_PENDING)) < 0) {
-        perror("Listen failed.");
+        printLog("Listen failed.");
         return 1; 
     } 
 
@@ -86,39 +94,67 @@ int connectHost(int port){
     socklen_t len = sizeof(client_sock);
     pthread_t thread_id;
     
-    cout << "Wait for connection..." << endl;
-    while (1) {
-
-        new_sockfd = accept(sockfd, (struct sockaddr*) &client_sock, &len);
-             
-        if (new_sockfd < 0) {
-                        cout << "exiting " << endl; 
-            perror("Accept failed.");
-                        cout << "exiting " << endl; 
-            return 1;
-        }
-
-      
-        /*if(pthread_create(&thread_id, NULL, connection_handler, (void*) &new_sockfd) < 0) {
-            perror("could not create thread");
-            return 1;
-        }*/
-
+    cout << "Waiting for challengers on port " << port << endl;
+    new_sockfd = accept(sockfd, (struct sockaddr*) &client_sock, &len);
+    if (new_sockfd < 0) {
+        printLog("Accept failed.");
+        return 1;
     }
-        
-}
-// Global variables recording the state of the game
-// Position of ball
-int ballX, ballY;
-// Movement of ball
-int dx, dy;
-// Position of paddles
-int padLY, padRY;
-// Player scores
-int scoreL, scoreR;
-// ncurses window
 
-WINDOW *win;
+    /* Send refresh rate over to client */
+    refresh = htonl(refresh);
+    if (send(new_sockfd, &refresh, sizeof(refresh), 0) == -1) {
+        printLog("Sending refresh rate to client failed.");
+        return 1;
+    }
+    
+    return 0;
+}
+
+
+int client_player(int port, char host[]) {
+    
+    /* Translate host name into peer's IP address */
+    struct hostent* hostIP = gethostbyname(host);
+    if (!hostIP) {
+        printLog("Error: Unknown host.");
+        return 1;
+    }
+
+    /* Create address data structure */
+    struct sockaddr_in sock;
+    // Clear memory location
+    bzero((char*) &sock, sizeof(sock));
+    // Specify IPv4
+    sock.sin_family = AF_INET;
+    // Copy host address into sockaddr
+    bcopy(hostIP->h_addr, (char*) &sock.sin_addr, hostIP->h_length);
+    // Convert from host to network byte order
+    sock.sin_port = htons(port);
+
+    /* Create the socket */
+    int sockfd;
+    if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+        printLog("Error creating socket.");
+        return 1;
+    } 
+
+    /* Connect */
+    if (connect(sockfd, (struct sockaddr*)&sock, sizeof(sock)) < 0) {
+        printLog("Error connecting.");
+        return 1;
+    }
+
+    /* Receive refresh rate from host */
+    if (recv(sockfd, &recv_refresh, sizeof(recv_refresh), 0) == -1) {
+        printLog("Error receiving refresh rate from host."); 
+        return 1;
+    }
+    recv_refresh = ntohl(recv_refresh);
+    
+    return 0;
+}
+
 
 /* Draw the current game state to the screen
  * ballX: X position of the ball
@@ -267,35 +303,37 @@ void initNcurses() {
 }
 
 int main(int argc, char *argv[]) {
-    // Process args
-    // refresh is clock rate in microseconds
-    // This corresponds to the movement speed of the ball
     
+    // Refresh is clock rate in microseconds
+    // This corresponds to the movement speed of the ball
     int  refresh;
     char difficulty[10];
-    if(argc != 3){
+    if(argc != 3){  
         printf("Not enough arguments.");
         return 1;
-
     }
 
-    int    port = stoi(argv[2]);
-    string host = argv[1];
-    if(host == "--host" ){
-        //cout << "i am the server" << endl;
-        printLog("i am the server");
-        
-        connectHost(port);
-        
+    int port = stoi(argv[2]);
+    char* host = argv[1];
+    if (strcmp(host, "--host") == 0) {
+        // Get difficulty level from user
+        printf("Please select the difficulty level (easy, medium or hard): ");
+        scanf("%s", &difficulty);
+        if(strcmp(difficulty, "easy") == 0) refresh = 80000;
+        else if(strcmp(difficulty, "medium") == 0) refresh = 40000;
+        else if(strcmp(difficulty, "hard") == 0) refresh = 20000;
+        if (host_player(port, refresh) == 1) {
+            printLog("Error encountered in host_player.");
+        }
+    }
+    else {
+        if (client_player(port, host) == 1) {
+            printLog("Error encountered in client_player.");
+        }
+        // Set refresh rate to value received from server
+        refresh = recv_refresh;
     }
    
-    ///////////////////
-    printf("Please select the difficulty level (easy, medium or hard): ");
-    scanf("%s", &difficulty);
-    if(strcmp(difficulty, "easy") == 0) refresh = 80000;
-    else if(strcmp(difficulty, "medium") == 0) refresh = 40000;
-    else if(strcmp(difficulty, "hard") == 0) refresh = 20000;
-
     // Set up ncurses environment
     initNcurses();
 
