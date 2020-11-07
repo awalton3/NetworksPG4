@@ -8,8 +8,8 @@ Creating a Network Pong Game :)
   - [x] Host prompts user for difficulty level 
   - [x] Host sends level to client 
 - [ ] Add rounds to game
-  - [ x] Host prompts user for max number of rounds to play
-  - [ ] Host sends max round number to client
+  - [x] Host prompts user for max number of rounds to play
+  - [x] Host sends max round number to client
   - [ ] Exit on both host and client when the max number of rounds are completed
 - [ ] Synchronize gameplay
     - [ ] Set up event-based (since we are using TCP) protocol that updates the other player
