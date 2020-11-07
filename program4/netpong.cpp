@@ -40,14 +40,28 @@ int scoreL, scoreR;
 // ncurses window
 WINDOW *win;
 
-/***** Helper Functions *****/
+bool isHost = false; 
+int HOST_SOCKFD = -1; 
+int CLIENT_SOCKFD = -1; 
 
-/* Logging Function */ 
+
+/***** Helper Functions *****/
 void printLog(string message){
     const char* messageChar = message.c_str();
     FILE *f = fopen("log", "a");
     fprintf(f,"%s\n", messageChar);
     fclose(f);
+}
+bool send_update(int val, string error) {
+
+	int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
+
+	if (send(sockfd, &val, sizeof(val), 0) == -1) {
+		printLog(error); 
+		return false;
+	}
+	printLog("sent update to " + sockfd); 
+	return true; 
 }
 
 int host_player(int port, int refresh) {
@@ -89,25 +103,23 @@ int host_player(int port, int refresh) {
     } 
 
     /* Wait for incoming connections */
-    int new_sockfd;
     struct sockaddr_in client_sock;
     socklen_t len = sizeof(client_sock);
     pthread_t thread_id;
     
     cout << "Waiting for challengers on port " << port << endl;
-    new_sockfd = accept(sockfd, (struct sockaddr*) &client_sock, &len);
-    if (new_sockfd < 0) {
+    HOST_SOCKFD = accept(sockfd, (struct sockaddr*) &client_sock, &len);
+    if (HOST_SOCKFD < 0) {
         printLog("Accept failed.");
         return 1;
     }
 
     /* Send refresh rate over to client */
     refresh = htonl(refresh);
-    if (send(new_sockfd, &refresh, sizeof(refresh), 0) == -1) {
-        printLog("Sending refresh rate to client failed.");
-        return 1;
-    }
-    
+	if (!send_update(refresh, "Sending refresh rate failed.")) {
+		return 1; 
+	} 
+     
     return 0;
 }
 
@@ -133,20 +145,19 @@ int client_player(int port, char host[]) {
     sock.sin_port = htons(port);
 
     /* Create the socket */
-    int sockfd;
-    if ((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    if ((CLIENT_SOCKFD = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
         printLog("Error creating socket.");
         return 1;
     } 
 
     /* Connect */
-    if (connect(sockfd, (struct sockaddr*)&sock, sizeof(sock)) < 0) {
+    if (connect(CLIENT_SOCKFD, (struct sockaddr*)&sock, sizeof(sock)) < 0) {
         printLog("Error connecting.");
         return 1;
     }
 
     /* Receive refresh rate from host */
-    if (recv(sockfd, &recv_refresh, sizeof(recv_refresh), 0) == -1) {
+    if (recv(CLIENT_SOCKFD, &recv_refresh, sizeof(recv_refresh), 0) == -1) {
         printLog("Error receiving refresh rate from host."); 
         return 1;
     }
@@ -273,16 +284,31 @@ void tock() {
  * Updates global pad positions
  */
 void *listenInput(void *args) {
+	// host: left, client: right
     while(1) {
         switch(getch()) {
-            case KEY_UP: padRY--;
-             break;
-            case KEY_DOWN: padRY++;
-             break;
-            case 'w': padLY--;
+			case KEY_UP: 
+				if (isHost) {
+					padLY--; 
+					send_update(padLY, "Error sending padLY to client.");
+				} else {
+					padRY--; 
+					send_update(padRY, "Error sending padRY to host."); 
+				}
+            	break;
+			case KEY_DOWN: 
+				if (isHost) {
+					padLY++; 
+					send_update(padLY, "Error sending padLY to client.");
+				} else {
+					padRY++; 
+					send_update(padRY, "Error sending padRY to host."); 
+				}
+	        	break;
+            /*case 'w': padLY--;
              break;
             case 's': padLY++;
-             break;
+             break; */ 
             default: break;
        }
     }       
@@ -303,6 +329,9 @@ void initNcurses() {
 }
 
 int main(int argc, char *argv[]) {
+
+	// Clear log file 
+	FILE *f = fopen("log", "w");
     
     // Refresh is clock rate in microseconds
     // This corresponds to the movement speed of the ball
@@ -316,6 +345,7 @@ int main(int argc, char *argv[]) {
     int port = stoi(argv[2]);
     char* host = argv[1];
     if (strcmp(host, "--host") == 0) {
+		isHost = true; 
         // Get difficulty level from user
         printf("Please select the difficulty level (easy, medium or hard): ");
         scanf("%s", &difficulty);
@@ -324,11 +354,13 @@ int main(int argc, char *argv[]) {
         else if(strcmp(difficulty, "hard") == 0) refresh = 20000;
         if (host_player(port, refresh) == 1) {
             printLog("Error encountered in host_player.");
+			return 1; 
         }
     }
     else {
-        if (client_player(port, host) == 1) {
+		if (client_player(port, host) == 1) {
             printLog("Error encountered in client_player.");
+			return 1;
         }
         // Set refresh rate to value received from server
         refresh = recv_refresh;
