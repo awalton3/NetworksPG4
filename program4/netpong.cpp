@@ -28,6 +28,7 @@ using namespace std;
 
 /***** Global Variables *****/
 int recv_refresh;
+int recv_rounds;
 // Global variables recording the state of the game
 // Position of ball
 int ballX, ballY;
@@ -64,7 +65,7 @@ bool send_update(int val, string error) {
 	return true; 
 }
 
-int host_player(int port, int refresh) {
+int host_player(int port, int refresh,int rounds) {
     
     // Networking code
     struct sockaddr_in sock;
@@ -119,12 +120,17 @@ int host_player(int port, int refresh) {
 	if (!send_update(refresh, "Sending refresh rate failed.")) {
 		return 1; 
 	} 
-     
+    /*Send number of rounds to client*/
+    rounds = htonl(rounds);
+    if (!send_update(rounds, "Sending rounds failed.")) {
+		return 1; 
+    } 
+    
     return 0;
 }
 
 
-int client_player(int port, char host[]) {
+int client_player(int port, char host[],int rounds) {
     
     /* Translate host name into peer's IP address */
     struct hostent* hostIP = gethostbyname(host);
@@ -162,6 +168,18 @@ int client_player(int port, char host[]) {
         return 1;
     }
     recv_refresh = ntohl(recv_refresh);
+    cout <<"recv_refresh" << recv_refresh << endl;
+
+
+    /* Receive rounds from host */
+    if (recv(CLIENT_SOCKFD, &recv_rounds, sizeof(recv_rounds), 0) == -1) {
+        printLog("Error receiving rounds from host."); 
+        return 1;
+    }
+    recv_rounds = ntohl(recv_rounds);
+    cout << "recv_rounds " << recv_rounds << endl;
+    printLog(to_string(recv_rounds));
+    
     
     return 0;
 }
@@ -342,6 +360,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    int rounds;
+
     int port = stoi(argv[2]);
     char* host = argv[1];
     if (strcmp(host, "--host") == 0) {
@@ -349,21 +369,31 @@ int main(int argc, char *argv[]) {
         // Get difficulty level from user
         printf("Please select the difficulty level (easy, medium or hard): ");
         scanf("%s", &difficulty);
+        printf("Please enter the maximum number of rounds to play: ");
+        scanf("%d",&rounds);
+        //printf("rounds: %d\n",rounds);
+        printLog(to_string(rounds));
+        //Send max number of rounds to client
+
         if(strcmp(difficulty, "easy") == 0) refresh = 80000;
         else if(strcmp(difficulty, "medium") == 0) refresh = 40000;
         else if(strcmp(difficulty, "hard") == 0) refresh = 20000;
-        if (host_player(port, refresh) == 1) {
+
+
+        if (host_player(port, refresh,rounds) == 1) {
             printLog("Error encountered in host_player.");
 			return 1; 
         }
     }
     else {
-		if (client_player(port, host) == 1) {
+		if (client_player(port, host,rounds) == 1) {
             printLog("Error encountered in client_player.");
 			return 1;
         }
         // Set refresh rate to value received from server
         refresh = recv_refresh;
+        //Set rounds to val received from server
+        rounds = recv_rounds;
     }
    
     // Set up ncurses environment
