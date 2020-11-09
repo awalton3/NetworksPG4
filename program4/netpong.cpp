@@ -35,6 +35,7 @@ int ballX, ballY;    // Ball position
 int dx, dy;          // Ball movement
 int padLY, padRY;    // Paddle position
 int scoreL, scoreR;  // Player scores
+int played_rounds;   //Rounds played
 WINDOW *win;         // ncurses window
 
 /* Networking Variables */
@@ -43,10 +44,11 @@ int HOST_SOCKFD = -1;
 int CLIENT_SOCKFD = -1; 
 
 /* Locks */
+//not sure why you need these;
 pthread_mutex_t ballX_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t ballY_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t dx_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t dy_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dx_lock    = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dy_lock    = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t padLY_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t padRY_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t scoreL_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -68,7 +70,7 @@ bool send_update(string var_name, int val, string error) {
     printLog("val");
     printLog(to_string(val));
 
-	const char* var_str = var_name.c_str();
+    const char* var_str = var_name.c_str();
     int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
 
     /* Create update string with "var_string val" format */ 
@@ -193,6 +195,7 @@ int client_player(int port, char host[],int rounds) {
         return 1;
     }
     recv_refresh = ntohl(recv_refresh);
+
     cout <<"recv_refresh" << recv_refresh << endl;
 
 
@@ -203,8 +206,10 @@ int client_player(int port, char host[],int rounds) {
     }
     recv_rounds = ntohl(recv_rounds);
     cout << "recv_rounds " << recv_rounds << endl;
-    printLog("rounds:");
+    //printLog("rounds:");
     printLog(to_string(recv_rounds));
+
+    cout << recv_rounds << endl;
     
     
     return 0;
@@ -358,16 +363,51 @@ void tock() {
     // Score points
     if(ballX == 0) {
         pthread_mutex_lock(&scoreR_lock);
-        scoreR = (scoreR + 1) % 100;
+        scoreR = (scoreR + 1) % 100; //not sure why you do the % 100 thing
         pthread_mutex_unlock(&scoreR_lock);
         reset();
         countdown("SCORE -->");
+
+        
+        if(scoreR ==2){
+            countdown("ROUND WIN -->");
+            played_rounds +=1;
+            if(played_rounds ==2 && (played_rounds!=recv_rounds)){
+                //reset the score
+                scoreR = 0;
+                scoreL = 0;
+
+            }
+            if(played_rounds != recv_rounds){
+               	send_update("exit", 0, "Error sending exit signal to client.");
+                endwin();
+                exit(0);
+            }
+        }
+
     } else if(ballX == WIDTH - 1) {
         pthread_mutex_lock(&scoreL_lock);
         scoreL = (scoreL + 1) % 100;
         pthread_mutex_unlock(&scoreL_lock);
         reset();
         countdown("<-- SCORE");
+        if(scoreL ==2){
+            countdown("<--ROUND WIN");
+            played_rounds +=1;
+            if(played_rounds!=recv_rounds){
+                //reset the score
+                scoreR = 0;
+                scoreL = 0;
+
+            }
+            if(played_rounds == recv_rounds){
+                send_update("exit", 0, "Error sending exit signal to client.");
+                endwin();
+                exit(0);
+            }
+
+            
+        }
     }
     
     // Finally, redraw the current state
@@ -439,7 +479,11 @@ void *listenUpdate(void *args) {
 			printLog("Error receiving updated game state var from other player.");	
 			return NULL; 
 		}
-        
+               
+                /*if(resp == "exit"){
+                    exit(0);
+                }*/
+ 
         /* Parse game update */
         char var_name[MAX_SIZE];
         char val[MAX_SIZE];
@@ -455,7 +499,11 @@ void *listenUpdate(void *args) {
             pthread_mutex_lock(&ballX_lock);
             ballX = val_int;
             pthread_mutex_unlock(&ballX_lock);
-        }       
+        }
+        else if(strcmp(var_name,"exit")==0){
+            endwin();
+            exit(0);
+        }
         else if (strcmp(var_name, "ballY") == 0) {
             pthread_mutex_lock(&ballY_lock);
             ballY = val_int;
@@ -553,6 +601,10 @@ int main(int argc, char *argv[]) {
         refresh = recv_refresh;
         // Set rounds to val received from server
         rounds = recv_rounds;
+        cout << "recv_rounds " << recv_rounds << endl;
+        //printLog("rounds:");
+        printLog(to_string(recv_rounds));
+        cout << recv_rounds << endl;
     }
    
     // Set up ncurses environment
@@ -568,6 +620,7 @@ int main(int argc, char *argv[]) {
 
 	// Listen for game state updates from other player
 	pthread_create(&pth, NULL, listenUpdate, NULL);
+
 
     // Main game loop executes tock() method every REFRESH microseconds
     struct timeval tv;
