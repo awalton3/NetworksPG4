@@ -7,7 +7,7 @@ Creating a Network Pong Game :)
 - [x] Choose game difficulty level
   - [x] Host prompts user for difficulty level 
   - [x] Host sends level to client 
-- [ ] Add rounds to game
+- [x] Add rounds to game
   - [x] Host prompts user for max number of rounds to play
   - [x] Host sends max round number to client
   - [x] Exit on both host and client when the max number of rounds are completed 
