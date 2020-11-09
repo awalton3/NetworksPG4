@@ -27,20 +27,16 @@ using namespace std;
 #define PADRX WIDTH - 2
 
 /***** Global Variables *****/
+/* Game Variables */
 int recv_refresh;
 int recv_rounds;
-// Global variables recording the state of the game
-// Position of ball
-int ballX, ballY;
-// Movement of ball
-int dx, dy;
-// Position of paddles
-int padLY, padRY;
-// Player scores
-int scoreL, scoreR;
-// ncurses window
-WINDOW *win;
+int ballX, ballY;    // Ball position
+int dx, dy;          // Ball movement
+int padLY, padRY;    // Paddle position
+int scoreL, scoreR;  // Player scores
+WINDOW *win;         // ncurses window
 
+/* Networking Variables */
 bool isHost = false; 
 int HOST_SOCKFD = -1; 
 int CLIENT_SOCKFD = -1; 
@@ -53,6 +49,7 @@ void printLog(string message){
     fprintf(f,"%s\n", messageChar);
     fclose(f);
 }
+
 bool send_update(int val, string error) {
 
 	int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
@@ -91,6 +88,7 @@ int host_player(int port, int refresh,int rounds) {
         printLog("Setting socket options failed.");
         return 1;
     }
+
     /* Bind */ 
     if ((bind(sockfd, (struct sockaddr*) &sock, sizeof(sock))) < 0) {
         printLog("Bind failed.");
@@ -120,7 +118,7 @@ int host_player(int port, int refresh,int rounds) {
 	if (!send_update(refresh, "Sending refresh rate failed.")) {
 		return 1; 
 	} 
-    /*Send number of rounds to client*/
+    /* Send number of rounds to client */
     rounds = htonl(rounds);
     if (!send_update(rounds, "Sending rounds failed.")) {
 		return 1; 
@@ -392,7 +390,7 @@ int main(int argc, char *argv[]) {
         }
         // Set refresh rate to value received from server
         refresh = recv_refresh;
-        //Set rounds to val received from server
+        // Set rounds to val received from server
         rounds = recv_rounds;
     }
    
