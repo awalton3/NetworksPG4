@@ -331,6 +331,25 @@ void *listenInput(void *args) {
     return NULL;
 }
 
+void *listenUpdate(void *args) {
+
+	int resp; 
+	char update[MAX_SIZE]; 
+	
+	//Get sockfd	
+	int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
+
+	while (resp = recv(sockfd, &update, sizeof(update), 0)) {
+		if (resp == -1) {
+			printLog("Error receiving updated game state var from other player.");	
+			return NULL; 
+		}
+		//Update game state 
+		//draw(int ballX, int ballY, int padLY, int padRY, int scoreL, int scoreR) 
+	}
+
+}
+
 void initNcurses() {
     initscr();
     cbreak();
@@ -404,6 +423,9 @@ int main(int argc, char *argv[]) {
     // Listen to keyboard input in a background thread
     pthread_t pth;
     pthread_create(&pth, NULL, listenInput, NULL);
+
+	// Listen for game state updates from other player
+	pthread_create(&pth, NULL, listenUpdate, NULL);
 
     // Main game loop executes tock() method every REFRESH microseconds
     struct timeval tv;
