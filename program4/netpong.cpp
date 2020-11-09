@@ -29,8 +29,8 @@ using namespace std;
 /***** Global Variables *****/
 
 /* Game Variables */
-int recv_refresh;
-int recv_rounds;
+int recv_refresh;    // Refresh rate
+int recv_rounds;     // Game rounds
 int ballX, ballY;    // Ball position
 int dx, dy;          // Ball movement
 int padLY, padRY;    // Paddle position
@@ -42,9 +42,19 @@ bool isHost = false;
 int HOST_SOCKFD = -1; 
 int CLIENT_SOCKFD = -1; 
 
+/* Locks */
+pthread_mutex_t ballX_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ballY_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dx_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dy_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t padLY_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t padRY_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t scoreL_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t scoreR_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 /***** Helper Functions *****/
-void printLog(string message){
+void printLog (string message) {
     const char* messageChar = message.c_str();
     FILE *f = fopen("log", "a");
     fprintf(f,"%s\n", messageChar);
@@ -238,13 +248,35 @@ void draw(int ballX, int ballY, int padLY, int padRY, int scoreL, int scoreR) {
 
 /* Return ball and paddles to starting positions
  * Horizontal direction of the ball is randomized
+ * Use locks to ensure multiple threads do not attempt to simultaneously edit a game
+ * variable
  */
 void reset() {
+    pthread_mutex_lock(&ballX_lock);
     ballX = WIDTH / 2;
-    padLY = padRY = ballY = HEIGHT / 2;
+    pthread_mutex_unlock(&ballX_lock);
+    
+    pthread_mutex_lock(&ballY_lock);
+    ballY = HEIGHT / 2;
+    pthread_mutex_unlock(&ballY_lock);
+
+    pthread_mutex_lock(&padRY_lock);
+    padRY = HEIGHT / 2;
+    pthread_mutex_unlock(&padRY_lock);
+    
+    pthread_mutex_lock(&padLY_lock);
+    padLY = HEIGHT / 2;
+    pthread_mutex_unlock(&padLY_lock);
+    
+    pthread_mutex_lock(&dx_lock);
     // dx is randomly either -1 or 1
     dx = (rand() % 2) * 2 - 1;
+    pthread_mutex_unlock(&dx_lock);
+
+    pthread_mutex_lock(&dy_lock);
     dy = 0;
+    pthread_mutex_unlock(&dy_lock);
+
     // Draw to reset everything visually
     draw(ballX, ballY, padLY, padRY, scoreL, scoreR);
 }
@@ -268,7 +300,19 @@ void countdown(const char *message) {
     wclear(popup);
     wrefresh(popup);
     delwin(popup);
-    padLY = padRY = HEIGHT / 2; // Wipe out any input that accumulated during the delay
+    
+    // Wipe out any input that accumulated during the delay
+    pthread_mutex_lock(&ballY_lock);
+    ballY = HEIGHT / 2;
+    pthread_mutex_unlock(&ballY_lock);
+
+    pthread_mutex_lock(&padRY_lock);
+    padRY = HEIGHT / 2;
+    pthread_mutex_unlock(&padRY_lock);
+    
+    pthread_mutex_lock(&padLY_lock);
+    padLY = HEIGHT / 2;
+    pthread_mutex_unlock(&padLY_lock);
 }
 
 /* Perform periodic game functions:
@@ -279,8 +323,12 @@ void countdown(const char *message) {
  */
 void tock() {
     // Move the ball
+    pthread_mutex_lock(&ballX_lock);
     ballX += dx;
+    pthread_mutex_unlock(&ballX_lock);
+    pthread_mutex_lock(&ballY_lock);
     ballY += dy;
+    pthread_mutex_unlock(&ballY_lock);
     
     // Check for paddle collisions
     // padY is y value of closest paddle to ball
@@ -289,27 +337,39 @@ void tock() {
     int colX = (ballX < WIDTH / 2) ? PADLX + 1 : PADRX - 1;
     if(ballX == colX && abs(ballY - padY) <= 2) {
         // Collision detected!
+        pthread_mutex_lock(&dx_lock);
         dx *= -1;
+        pthread_mutex_unlock(&dx_lock);
+
         // Determine bounce angle
+        pthread_mutex_lock(&dy_lock);
         if(ballY < padY) dy = -1;
         else if(ballY > padY) dy = 1;
         else dy = 0;
+        pthread_mutex_unlock(&dy_lock);
     }
 
     // Check for top/bottom boundary collisions
+    pthread_mutex_lock(&dy_lock);
     if(ballY == 1) dy = 1;
     else if(ballY == HEIGHT - 2) dy = -1;
-    
+    pthread_mutex_unlock(&dy_lock);
+
     // Score points
     if(ballX == 0) {
+        pthread_mutex_lock(&scoreR_lock);
         scoreR = (scoreR + 1) % 100;
+        pthread_mutex_unlock(&scoreR_lock);
         reset();
         countdown("SCORE -->");
     } else if(ballX == WIDTH - 1) {
+        pthread_mutex_lock(&scoreL_lock);
         scoreL = (scoreL + 1) % 100;
+        pthread_mutex_unlock(&scoreL_lock);
         reset();
         countdown("<-- SCORE");
     }
+    
     // Finally, redraw the current state
     draw(ballX, ballY, padLY, padRY, scoreL, scoreR);
 }
@@ -323,13 +383,17 @@ void *listenInput(void *args) {
         switch(getch()) {
 			case KEY_UP: 
 				if (isHost) {
+                    pthread_mutex_lock(&padLY_lock);
 	                padLY--; 
+                    pthread_mutex_unlock(&padLY_lock);
                     printLog("padLY in listen:");
                     printLog(to_string(padRY));
 				    // TODO: error checking on send_update???
 					send_update("padLY", padLY, "Error sending padLY to client.");
 				} else {
+                    pthread_mutex_lock(&padRY_lock);
 					padRY--; 
+                    pthread_mutex_unlock(&padRY_lock);
                     printLog("padRY in listen:");
                     printLog(to_string(padRY));
 					send_update("padRY", padRY, "Error sending padRY to host."); 
@@ -337,12 +401,16 @@ void *listenInput(void *args) {
             	break;
 			case KEY_DOWN: 
 				if (isHost) {
+                    pthread_mutex_lock(&padLY_lock);
 					padLY++; 
+                    pthread_mutex_unlock(&padLY_lock);
                     printLog("padLY in listen:");
                     printLog(to_string(padRY));
 					send_update("padLY", padLY, "Error sending padLY to client.");
 				} else {
+                    pthread_mutex_lock(&padRY_lock);
 					padRY++; 
+                    pthread_mutex_unlock(&padRY_lock);
                     printLog("padRY in listen:");
                     printLog(to_string(padRY));
 					send_update("padRY", padRY, "Error sending padRY to host."); 
@@ -384,22 +452,34 @@ void *listenUpdate(void *args) {
         int val_int = stoi(val);
 
         if (strcmp(var_name, "ballX") == 0) {
+            pthread_mutex_lock(&ballX_lock);
             ballX = val_int;
+            pthread_mutex_unlock(&ballX_lock);
         }       
         else if (strcmp(var_name, "ballY") == 0) {
+            pthread_mutex_lock(&ballY_lock);
             ballY = val_int;
+            pthread_mutex_unlock(&ballY_lock);
         }
         else if (strcmp(var_name, "padLY") == 0) {
+            pthread_mutex_lock(&padLY_lock);
             padLY = val_int;
+            pthread_mutex_unlock(&padLY_lock);
         }
         else if (strcmp(var_name, "padRY") == 0) {
+            pthread_mutex_lock(&padRY_lock);
             padRY = val_int;
+            pthread_mutex_unlock(&padRY_lock);
         }
         else if (strcmp(var_name, "scoreL") == 0) {
+            pthread_mutex_lock(&scoreL_lock);
             scoreL = val_int;
+            pthread_mutex_unlock(&scoreL_lock);
         }
         else if (strcmp(var_name, "scoreR") == 0) {
+            pthread_mutex_lock(&scoreR_lock);
             scoreR = val_int;
+            pthread_mutex_lock(&scoreR_lock);
         }
         else { 
             printLog("Invalid game update received.");
