@@ -14,7 +14,7 @@ Creating a Network Pong Game :)
   - [x] Update score once a new round occurs
 - [ ] Synchronize gameplay
     - [ ] Set up event-based (since we are using TCP) protocol that updates the other player
-    - [~] Make sure scoring works properly (This sort of works but game is not in sync yet)
+    - [ ] Make sure scoring works properly 
     - [ ] Make sure each user can only control their own paddle
     - [ ] Check for edge cases
   
