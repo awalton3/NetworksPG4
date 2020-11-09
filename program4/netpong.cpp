@@ -27,6 +27,7 @@ using namespace std;
 #define PADRX WIDTH - 2
 
 /***** Global Variables *****/
+
 /* Game Variables */
 int recv_refresh;
 int recv_rounds;
@@ -50,16 +51,29 @@ void printLog(string message){
     fclose(f);
 }
 
-bool send_update(int val, string error) {
+bool send_update(string var_name, int val, string error) {
 
-	int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
+    printLog("var_name");
+    printLog(var_name);
+    printLog("val");
+    printLog(to_string(val));
 
-	if (send(sockfd, &val, sizeof(val), 0) == -1) {
+	const char* var_str = var_name.c_str();
+    int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
+
+    /* Create update string with "var_string val" format */ 
+    char update_str[BUFSIZ];
+    sprintf(update_str, "%s %d", var_str, val);
+
+    /* Send update to appropriate socket */ 
+	if (send(sockfd, update_str, strlen(update_str) + 1, 0) == -1) {
 		printLog(error); 
 		return false;
 	}
-	printLog("sent update to " + sockfd); 
-	return true; 
+	printLog("sent update string:"); 
+    printLog(string(update_str));
+	
+    return true; 
 }
 
 int host_player(int port, int refresh,int rounds) {
@@ -115,14 +129,17 @@ int host_player(int port, int refresh,int rounds) {
 
     /* Send refresh rate over to client */
     refresh = htonl(refresh);
-	if (!send_update(refresh, "Sending refresh rate failed.")) {
-		return 1; 
-	} 
+    if (send(HOST_SOCKFD, &refresh, sizeof(refresh), 0) == -1) {
+        printLog("Sending refresh rate to client failed.");
+        return 1;
+    }
+       
     /* Send number of rounds to client */
     rounds = htonl(rounds);
-    if (!send_update(rounds, "Sending rounds failed.")) {
-		return 1; 
-    } 
+    if (send(HOST_SOCKFD, &rounds, sizeof(rounds), 0) == -1) {
+        printLog("Sending rounds to client failed.");
+        return 1;
+    }
     
     return 0;
 }
@@ -176,6 +193,7 @@ int client_player(int port, char host[],int rounds) {
     }
     recv_rounds = ntohl(recv_rounds);
     cout << "recv_rounds " << recv_rounds << endl;
+    printLog("rounds:");
     printLog(to_string(recv_rounds));
     
     
@@ -305,20 +323,29 @@ void *listenInput(void *args) {
         switch(getch()) {
 			case KEY_UP: 
 				if (isHost) {
-					padLY--; 
-					send_update(padLY, "Error sending padLY to client.");
+	                padLY--; 
+                    printLog("padLY in listen:");
+                    printLog(to_string(padRY));
+				    // TODO: error checking on send_update???
+					send_update("padLY", padLY, "Error sending padLY to client.");
 				} else {
 					padRY--; 
-					send_update(padRY, "Error sending padRY to host."); 
+                    printLog("padRY in listen:");
+                    printLog(to_string(padRY));
+					send_update("padRY", padRY, "Error sending padRY to host."); 
 				}
             	break;
 			case KEY_DOWN: 
 				if (isHost) {
 					padLY++; 
-					send_update(padLY, "Error sending padLY to client.");
+                    printLog("padLY in listen:");
+                    printLog(to_string(padRY));
+					send_update("padLY", padLY, "Error sending padLY to client.");
 				} else {
 					padRY++; 
-					send_update(padRY, "Error sending padRY to host."); 
+                    printLog("padRY in listen:");
+                    printLog(to_string(padRY));
+					send_update("padRY", padRY, "Error sending padRY to host."); 
 				}
 	        	break;
             /*case 'w': padLY--;
@@ -336,7 +363,7 @@ void *listenUpdate(void *args) {
 	int resp; 
 	char update[MAX_SIZE]; 
 	
-	//Get sockfd	
+	// Get sockfd	
 	int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
 
 	while (resp = recv(sockfd, &update, sizeof(update), 0)) {
@@ -344,8 +371,43 @@ void *listenUpdate(void *args) {
 			printLog("Error receiving updated game state var from other player.");	
 			return NULL; 
 		}
-		//Update game state 
-		//draw(int ballX, int ballY, int padLY, int padRY, int scoreL, int scoreR) 
+        
+        /* Parse game update */
+        char var_name[MAX_SIZE];
+        char val[MAX_SIZE];
+
+        sscanf(update, "%s %s", var_name, val);  
+        printLog("update:");
+        printLog(string(update));
+        printLog(string(val));
+        printLog(string(var_name));
+        int val_int = stoi(val);
+
+        if (strcmp(var_name, "ballX") == 0) {
+            ballX = val_int;
+        }       
+        else if (strcmp(var_name, "ballY") == 0) {
+            ballY = val_int;
+        }
+        else if (strcmp(var_name, "padLY") == 0) {
+            padLY = val_int;
+        }
+        else if (strcmp(var_name, "padRY") == 0) {
+            padRY = val_int;
+        }
+        else if (strcmp(var_name, "scoreL") == 0) {
+            scoreL = val_int;
+        }
+        else if (strcmp(var_name, "scoreR") == 0) {
+            scoreR = val_int;
+        }
+        else { 
+            printLog("Invalid game update received.");
+        }
+        
+		/* Update game state */
+		draw(ballX, ballY, padLY, padRY, scoreL, scoreR); 
+
 	}
 
 }
@@ -377,8 +439,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int rounds;
-
+    int rounds; //FIXME: not doing anything
+    
     int port = stoi(argv[2]);
     char* host = argv[1];
     if (strcmp(host, "--host") == 0) {
