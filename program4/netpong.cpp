@@ -429,14 +429,36 @@ void *listenInput(void *args) {
                     printLog("padLY in listen:");
                     printLog(to_string(padRY));
 				    // TODO: error checking on send_update???
-					send_update("padLY", padLY, "Error sending padLY to client.");
+                                    // Send updated paddle
+			                                        //Send updated ball
+                                        //int ballX, ballY;    // Ball position
+                                        //int dx, dy;          // Ball movement
+                                        
+                                        send_update("padLY", padLY, "Error sending padLY to client.");
+                                        send_update("ballX", ballX, "Error sending ballX to client.");
+                                        send_update("ballY", ballY, "Error sending ballY to client.");
+                                        send_update("dx", dx, "Error sending dx to client.");
+                                        send_update("dy", dy, "Error sending dy to client.");
+
+
+
+
+
+
+
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY--; 
                     pthread_mutex_unlock(&padRY_lock);
                     printLog("padRY in listen:");
                     printLog(to_string(padRY));
-					send_update("padRY", padRY, "Error sending padRY to host."); 
+					send_update("padRY", padRY, "Error sending padRY to host.");
+                                        send_update("ballX", ballX, "Error sending ballX to client.");
+                                        send_update("ballY", ballY, "Error sending ballY to client.");
+                                        send_update("dx", dx, "Error sending dx to client.");
+                                        send_update("dy", dy, "Error sending dy to client.");
+
+
 				}
             	break;
 			case KEY_DOWN: 
@@ -447,6 +469,13 @@ void *listenInput(void *args) {
                     printLog("padLY in listen:");
                     printLog(to_string(padRY));
 					send_update("padLY", padLY, "Error sending padLY to client.");
+                                        send_update("ballX", ballX, "Error sending ballX to client.");
+                                        send_update("ballY", ballY, "Error sending ballY to client.");
+                                        send_update("dx", dx, "Error sending dx to client.");
+                                        send_update("dy", dy, "Error sending dy to client.");
+
+
+
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY++; 
@@ -454,6 +483,11 @@ void *listenInput(void *args) {
                     printLog("padRY in listen:");
                     printLog(to_string(padRY));
 					send_update("padRY", padRY, "Error sending padRY to host."); 
+                                        send_update("ballX", ballX, "Error sending ballX to client.");
+                                        send_update("ballY", ballY, "Error sending ballY to client.");
+                                        send_update("dx", dx, "Error sending dx to client.");
+                                        send_update("dy", dy, "Error sending dy to client.");
+
 				}
 	        	break;
             /*case 'w': padLY--;
