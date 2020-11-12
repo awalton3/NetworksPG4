@@ -27,15 +27,17 @@ using namespace std;
 #define PADRX WIDTH - 2
 
 /***** Global Variables *****/
+int MAX_SCORE = 2; 
+int NROUNDS; 
+int PLAYED_ROUNDS = 0; 
 
 /* Game Variables */
-int recv_refresh;    // Refresh rate
-int recv_rounds;     // Game rounds
+int recv_refresh;    // Refresh rate for client
+int recv_rounds;     // Game rounds for client 
 int ballX, ballY;    // Ball position
 int dx, dy;          // Ball movement
 int padLY, padRY;    // Paddle position
 int scoreL, scoreR;  // Player scores
-int played_rounds;   //Rounds played
 WINDOW *win;         // ncurses window
 
 /* Networking Variables */
@@ -45,14 +47,15 @@ int CLIENT_SOCKFD = -1;
 
 /* Locks */
 //not sure why you need these;
-pthread_mutex_t ballX_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t ballY_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t dx_lock    = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t dy_lock    = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t padLY_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t padRY_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t scoreL_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t scoreR_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ballX_lock 			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ballY_lock 			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dx_lock    			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t dy_lock    			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t padLY_lock 			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t padRY_lock 			= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t scoreL_lock 		= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t scoreR_lock 		= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t played_rounds_lock 	= PTHREAD_MUTEX_INITIALIZER;
 
 
 /***** Helper Functions *****/
@@ -88,7 +91,8 @@ bool send_update(string var_name, int val, string error) {
     return true; 
 }
 
-int host_player(int port, int refresh,int rounds) {
+/* Host handler */ 
+int host_player(int port, int refresh) {
     
     // Networking code
     struct sockaddr_in sock;
@@ -145,19 +149,19 @@ int host_player(int port, int refresh,int rounds) {
         printLog("Sending refresh rate to client failed.");
         return 1;
     }
+	//printLog("********sent refresh to client."); 
        
     /* Send number of rounds to client */
-    rounds = htonl(rounds);
+    int rounds = htonl(NROUNDS);
     if (send(HOST_SOCKFD, &rounds, sizeof(rounds), 0) == -1) {
         printLog("Sending rounds to client failed.");
         return 1;
     }
-    
     return 0;
 }
 
-
-int client_player(int port, char host[],int rounds) {
+/* Client handler */ 
+int client_player(int port, char host[], int refresh) {
     
     /* Translate host name into peer's IP address */
     struct hostent* hostIP = gethostbyname(host);
@@ -195,23 +199,22 @@ int client_player(int port, char host[],int rounds) {
         return 1;
     }
     recv_refresh = ntohl(recv_refresh);
-
-    cout <<"recv_refresh" << recv_refresh << endl;
-
+	//TODO make refresh similar to rounds: refresh = recv_refresh; 
+	//printLog("recv_refresh " + to_string(recv_refresh)); 
 
     /* Receive rounds from host */
+	int recv_rounds; 
     if (recv(CLIENT_SOCKFD, &recv_rounds, sizeof(recv_rounds), 0) == -1) {
         printLog("Error receiving rounds from host."); 
         return 1;
     }
-    recv_rounds = ntohl(recv_rounds);
-    cout << "recv_rounds " << recv_rounds << endl;
-    //printLog("rounds:");
-    printLog(to_string(recv_rounds));
+    NROUNDS = ntohl(recv_rounds);
 
-    cout << recv_rounds << endl;
-    
-    
+    //cout << "NROUNDS (client)" << NROUNDS << endl;
+    //printLog("rounds:");
+    //printLog(to_string(recv_rounds));
+    //cout << recv_rounds << endl;
+	
     return 0;
 }
 
@@ -327,6 +330,7 @@ void countdown(const char *message) {
  * 4. Draw updated game state to the screen
  */
 void tock() {
+
     // Move the ball
     pthread_mutex_lock(&ballX_lock);
     ballX += dx;
@@ -361,18 +365,41 @@ void tock() {
     pthread_mutex_unlock(&dy_lock);
 
     // Score points
-    if(ballX == 0) {
+    if(ballX == 0) { // Right player scores 
         pthread_mutex_lock(&scoreR_lock);
         scoreR = (scoreR + 1) % 100; //not sure why you do the % 100 thing
         pthread_mutex_unlock(&scoreR_lock);
-        reset();
-        countdown("SCORE -->");
+        reset(); 
+        //countdown("SCORE -->");
 
-        
-        if(scoreR ==2){
+        if (scoreR == MAX_SCORE) { //round completed
             countdown("ROUND WIN -->");
-            played_rounds +=1;
-            if(played_rounds ==2 && (played_rounds!=recv_rounds)){
+            PLAYED_ROUNDS += 1;
+			printLog("ROUND WON"); 
+			printLog(to_string(PLAYED_ROUNDS); 
+
+			//Check if all rounds have been completed 
+			if (PLAYED_ROUNDS == NROUNDS) {
+				send_update("exit", 0, "Error sending exit signal to client."); 
+				endwin(); 
+				exit(0); 
+			} 
+
+			//NOTE: this update, sets the scoreL and scoreR to 0 for the other player in addition to 
+			//to updating played_rounds variable.
+			send_update("played_rounds", PLAYED_ROUNDS, "Error sending played_rounds to other player."); 
+
+			/// Reset score for current player  
+			scoreR = 0; 
+			scoreL = 0; 
+			
+		} else { //round not completed 
+			countdown("SCORE -->");
+			send_update("scoreR", scoreR, "Error sending scoreR to other player"); 
+		}
+
+		// OLD STUFF: 
+            /*if(played_rounds ==2 && (played_rounds!=recv_rounds)){
                 //reset the score
                 scoreR = 0;
                 scoreL = 0;
@@ -382,19 +409,42 @@ void tock() {
                	send_update("exit", 0, "Error sending exit signal to client.");
                 endwin();
                 exit(0);
-            }
-        }
+            } */ 
 
-    } else if(ballX == WIDTH - 1) {
+    } else if(ballX == WIDTH - 1) { // Left player scores 
+
         pthread_mutex_lock(&scoreL_lock);
         scoreL = (scoreL + 1) % 100;
         pthread_mutex_unlock(&scoreL_lock);
         reset();
-        countdown("<-- SCORE");
-        if(scoreL ==2){
+        //countdown("<-- SCORE");
+	
+        if (scoreL == MAX_SCORE) { //round completed
             countdown("<--ROUND WIN");
-            played_rounds +=1;
-            if(played_rounds!=recv_rounds){
+            PLAYED_ROUNDS  +=1;   
+
+			printLog("ROUND WON"); 
+			printLog(to_string(PLAYED_ROUNDS); 
+
+			//Check if all rounds have been completed 
+			if (PLAYED_ROUNDS  == NROUNDS) {
+				send_update("exit", 0, "Error sending exit signal to client."); // DOES this send signal? 
+				endwin(); 
+				exit(0); 
+			} 
+
+			//NOTE: this update, sets the scoreL and scoreR to 0 upon receiving played_rounds variable
+			send_update("played_rounds", PLAYED_ROUNDS, "Error sending played_rounds to other player."); 
+			scoreR = 0; 
+			scoreL = 0; 
+		
+		} else { //round not completed 
+			countdown("SCORE -->");
+			send_update("scoreL", scoreL, "Error sending scoreL to other player"); 
+		}
+
+		// OLD stuff: 
+            /*if(played_rounds!=recv_rounds){
                 //reset the score
                 scoreR = 0;
                 scoreL = 0;
@@ -404,10 +454,7 @@ void tock() {
                 send_update("exit", 0, "Error sending exit signal to client.");
                 endwin();
                 exit(0);
-            }
-
-            
-        }
+            }*/ 
     }
     
     // Finally, redraw the current state
@@ -426,39 +473,20 @@ void *listenInput(void *args) {
                     pthread_mutex_lock(&padLY_lock);
 	                padLY--; 
                     pthread_mutex_unlock(&padLY_lock);
-                    printLog("padLY in listen:");
-                    printLog(to_string(padRY));
-				    // TODO: error checking on send_update???
-                                    // Send updated paddle
-			                                        //Send updated ball
-                                        //int ballX, ballY;    // Ball position
-                                        //int dx, dy;          // Ball movement
-                                        
-                                        send_update("padLY", padLY, "Error sending padLY to client.");
-                                        send_update("ballX", ballX, "Error sending ballX to client.");
-                                        send_update("ballY", ballY, "Error sending ballY to client.");
-                                        send_update("dx", dx, "Error sending dx to client.");
-                                        send_update("dy", dy, "Error sending dy to client.");
-
-
-
-
-
-
-
+                    send_update("padLY", padLY, "Error sending padLY to client.");
+                                        //send_update("ballX", ballX, "Error sending ballX to client.");
+                                        //send_update("ballY", ballY, "Error sending ballY to client.");
+                                        //send_update("dx", dx, "Error sending dx to client.");
+                                        //send_update("dy", dy, "Error sending dy to client.");
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY--; 
                     pthread_mutex_unlock(&padRY_lock);
-                    printLog("padRY in listen:");
-                    printLog(to_string(padRY));
-					send_update("padRY", padRY, "Error sending padRY to host.");
-                                        send_update("ballX", ballX, "Error sending ballX to client.");
-                                        send_update("ballY", ballY, "Error sending ballY to client.");
-                                        send_update("dx", dx, "Error sending dx to client.");
-                                        send_update("dy", dy, "Error sending dy to client.");
-
-
+         			send_update("padRY", padRY, "Error sending padRY to host.");
+                                        //send_update("ballX", ballX, "Error sending ballX to client.");
+                                        //send_update("ballY", ballY, "Error sending ballY to client.");
+                                        //send_update("dx", dx, "Error sending dx to client.");
+                                        //send_update("dy", dy, "Error sending dy to client.");
 				}
             	break;
 			case KEY_DOWN: 
@@ -466,28 +494,20 @@ void *listenInput(void *args) {
                     pthread_mutex_lock(&padLY_lock);
 					padLY++; 
                     pthread_mutex_unlock(&padLY_lock);
-                    printLog("padLY in listen:");
-                    printLog(to_string(padRY));
-					send_update("padLY", padLY, "Error sending padLY to client.");
-                                        send_update("ballX", ballX, "Error sending ballX to client.");
-                                        send_update("ballY", ballY, "Error sending ballY to client.");
-                                        send_update("dx", dx, "Error sending dx to client.");
-                                        send_update("dy", dy, "Error sending dy to client.");
-
-
-
+ 					send_update("padLY", padLY, "Error sending padLY to client.");
+                                        //send_update("ballX", ballX, "Error sending ballX to client.");
+                                        //send_update("ballY", ballY, "Error sending ballY to client.");
+                                        //send_update("dx", dx, "Error sending dx to client.");
+                                        //send_update("dy", dy, "Error sending dy to client.");
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY++; 
                     pthread_mutex_unlock(&padRY_lock);
-                    printLog("padRY in listen:");
-                    printLog(to_string(padRY));
-					send_update("padRY", padRY, "Error sending padRY to host."); 
-                                        send_update("ballX", ballX, "Error sending ballX to client.");
-                                        send_update("ballY", ballY, "Error sending ballY to client.");
-                                        send_update("dx", dx, "Error sending dx to client.");
-                                        send_update("dy", dy, "Error sending dy to client.");
-
+      				send_update("padRY", padRY, "Error sending padRY to host."); 
+                                        //send_update("ballX", ballX, "Error sending ballX to client.");
+                                        //send_update("ballY", ballY, "Error sending ballY to client.");
+                                        //send_update("dx", dx, "Error sending dx to client.");
+                                        //send_update("dy", dy, "Error sending dy to client.");
 				}
 	        	break;
             /*case 'w': padLY--;
@@ -513,11 +533,7 @@ void *listenUpdate(void *args) {
 			printLog("Error receiving updated game state var from other player.");	
 			return NULL; 
 		}
-               
-                /*if(resp == "exit"){
-                    exit(0);
-                }*/
- 
+  
         /* Parse game update */
         char var_name[MAX_SIZE];
         char val[MAX_SIZE];
@@ -533,10 +549,6 @@ void *listenUpdate(void *args) {
             pthread_mutex_lock(&ballX_lock);
             ballX = val_int;
             pthread_mutex_unlock(&ballX_lock);
-        }
-        else if(strcmp(var_name,"exit")==0){
-            endwin();
-            exit(0);
         }
         else if (strcmp(var_name, "ballY") == 0) {
             pthread_mutex_lock(&ballY_lock);
@@ -561,7 +573,27 @@ void *listenUpdate(void *args) {
         else if (strcmp(var_name, "scoreR") == 0) {
             pthread_mutex_lock(&scoreR_lock);
             scoreR = val_int;
-            pthread_mutex_lock(&scoreR_lock);
+            pthread_mutex_unlock(&scoreR_lock);
+        }
+		else if (strcmp(var_name, "played_rounds") == 0) {
+			// Update played_rounds 
+			pthread_mutex_lock(&played_rounds_lock); 
+			PLAYED_ROUNDS = val_int; 
+			pthread_mutex_unlock(&played_rounds_lock); 
+
+			// Update scoreL 
+			pthread_mutex_lock(&scoreL_lock);
+            scoreL = 0;
+            pthread_mutex_unlock(&scoreL_lock);
+
+			// Update scoreR
+			pthread_mutex_lock(&scoreR_lock);
+            scoreR = 0;
+            pthread_mutex_unlock(&scoreR_lock);
+		}
+        else if(strcmp(var_name,"exit")==0){
+            endwin();
+            exit(0);
         }
         else { 
             printLog("Invalid game update received.");
@@ -599,46 +631,54 @@ int main(int argc, char *argv[]) {
     if(argc != 3){  
         printf("Not enough arguments.");
         return 1;
-    }
-
-    int rounds; //FIXME: not doing anything
-    
+    }    
     int port = stoi(argv[2]);
     char* host = argv[1];
+
     if (strcmp(host, "--host") == 0) {
+
+		// Establish Host
 		isHost = true; 
-        // Get difficulty level from user
+
+        // Get difficulty level from host 
         printf("Please select the difficulty level (easy, medium or hard): ");
         scanf("%s", &difficulty);
+
+		// Get number of rounds from host 
         printf("Please enter the maximum number of rounds to play: ");
-        scanf("%d",&rounds);
+        scanf("%d",&NROUNDS);
         //printf("rounds: %d\n",rounds);
-        printLog(to_string(rounds));
+        //printLog(to_string(NROUNDS));
         //Send max number of rounds to client
 
+		// Set refresh rate based on difficulty 
         if(strcmp(difficulty, "easy") == 0) refresh = 80000;
         else if(strcmp(difficulty, "medium") == 0) refresh = 40000;
         else if(strcmp(difficulty, "hard") == 0) refresh = 20000;
 
-
-        if (host_player(port, refresh,rounds) == 1) {
+		// Startup host socket connection 
+        if (host_player(port, refresh) == 1) {
             printLog("Error encountered in host_player.");
 			return 1; 
         }
     }
     else {
-		if (client_player(port, host,rounds) == 1) {
+
+		// Startup client socket connection
+		if (client_player(port, host, refresh) == 1) {
             printLog("Error encountered in client_player.");
 			return 1;
         }
+
         // Set refresh rate to value received from server
         refresh = recv_refresh;
+
         // Set rounds to val received from server
-        rounds = recv_rounds;
-        cout << "recv_rounds " << recv_rounds << endl;
+        //rounds = recv_rounds;
+        //cout << "recv_rounds " << recv_rounds << endl;
         //printLog("rounds:");
-        printLog(to_string(recv_rounds));
-        cout << recv_rounds << endl;
+        //printLog(to_string(recv_rounds));
+        //cout << recv_rounds << endl;
     }
    
     // Set up ncurses environment
