@@ -68,10 +68,10 @@ void printLog (string message) {
 
 bool send_update(string var_name, int val, string error) {
 
-    printLog("var_name");
+    /*printLog("var_name");
     printLog(var_name);
     printLog("val");
-    printLog(to_string(val));
+    printLog(to_string(val));*/
 
     const char* var_str = var_name.c_str();
     int sockfd = isHost ? HOST_SOCKFD : CLIENT_SOCKFD; 
@@ -85,8 +85,9 @@ bool send_update(string var_name, int val, string error) {
 		printLog(error); 
 		return false;
 	}
-	printLog("sent update string:"); 
-    printLog(string(update_str));
+	
+    //printLog("sent update string:"); 
+    //printLog(string(update_str));
 	
     return true; 
 }
@@ -344,7 +345,7 @@ void tock() {
     int padY = (ballX < WIDTH / 2) ? padLY : padRY;
     // colX is x value of ball for a paddle collision
     int colX = (ballX < WIDTH / 2) ? PADLX + 1 : PADRX - 1;
-    if(ballX == colX && abs(ballY - padY) <= 2) {
+    if (ballX == colX && abs(ballY - padY) <= 2) {
         // Collision detected!
         pthread_mutex_lock(&dx_lock);
         dx *= -1;
@@ -360,12 +361,12 @@ void tock() {
 
     // Check for top/bottom boundary collisions
     pthread_mutex_lock(&dy_lock);
-    if(ballY == 1) dy = 1;
-    else if(ballY == HEIGHT - 2) dy = -1;
+    if (ballY == 1) dy = 1;
+    else if (ballY == HEIGHT - 2) dy = -1;
     pthread_mutex_unlock(&dy_lock);
 
     // Score points
-    if(ballX == 0) { // Right player scores 
+    if (ballX == 0) { // Right player scores 
         pthread_mutex_lock(&scoreR_lock);
         scoreR = (scoreR + 1) % 100; //not sure why you do the % 100 thing
         pthread_mutex_unlock(&scoreR_lock);
@@ -373,10 +374,15 @@ void tock() {
         //countdown("SCORE -->");
 
         if (scoreR == MAX_SCORE) { //round completed
-            countdown("ROUND WIN -->");
+            countdown("ROUND WIN -->");	
+            pthread_mutex_lock(&played_rounds_lock); 
             PLAYED_ROUNDS += 1;
-			printLog("ROUND WON"); 
-			printLog(to_string(PLAYED_ROUNDS); 
+            pthread_mutex_unlock(&played_rounds_lock); 
+            
+            if (isHost) printLog("******** host (L player) *********");
+            else printLog("******** client (R player) **********");
+            printLog("ROUND WON"); 
+			printLog(to_string(PLAYED_ROUNDS)); 
 
 			//Check if all rounds have been completed 
 			if (PLAYED_ROUNDS == NROUNDS) {
@@ -421,10 +427,14 @@ void tock() {
 	
         if (scoreL == MAX_SCORE) { //round completed
             countdown("<--ROUND WIN");
-            PLAYED_ROUNDS  +=1;   
+            
+            pthread_mutex_lock(&played_rounds_lock); 
+            PLAYED_ROUNDS  += 1;   
+            pthread_mutex_unlock(&played_rounds_lock); 
+
 
 			printLog("ROUND WON"); 
-			printLog(to_string(PLAYED_ROUNDS); 
+			printLog(to_string(PLAYED_ROUNDS)); 
 
 			//Check if all rounds have been completed 
 			if (PLAYED_ROUNDS  == NROUNDS) {
@@ -474,19 +484,19 @@ void *listenInput(void *args) {
 	                padLY--; 
                     pthread_mutex_unlock(&padLY_lock);
                     send_update("padLY", padLY, "Error sending padLY to client.");
-                                        //send_update("ballX", ballX, "Error sending ballX to client.");
-                                        //send_update("ballY", ballY, "Error sending ballY to client.");
-                                        //send_update("dx", dx, "Error sending dx to client.");
-                                        //send_update("dy", dy, "Error sending dy to client.");
+                    //send_update("ballX", ballX, "Error sending ballX to client.");
+                    //send_update("ballY", ballY, "Error sending ballY to client.");
+                    //send_update("dx", dx, "Error sending dx to client.");
+                    //send_update("dy", dy, "Error sending dy to client.");
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY--; 
                     pthread_mutex_unlock(&padRY_lock);
          			send_update("padRY", padRY, "Error sending padRY to host.");
-                                        //send_update("ballX", ballX, "Error sending ballX to client.");
-                                        //send_update("ballY", ballY, "Error sending ballY to client.");
-                                        //send_update("dx", dx, "Error sending dx to client.");
-                                        //send_update("dy", dy, "Error sending dy to client.");
+                    //send_update("ballX", ballX, "Error sending ballX to client.");
+                    //send_update("ballY", ballY, "Error sending ballY to client.");
+                    //send_update("dx", dx, "Error sending dx to client.");
+                    //send_update("dy", dy, "Error sending dy to client.");
 				}
             	break;
 			case KEY_DOWN: 
@@ -495,19 +505,19 @@ void *listenInput(void *args) {
 					padLY++; 
                     pthread_mutex_unlock(&padLY_lock);
  					send_update("padLY", padLY, "Error sending padLY to client.");
-                                        //send_update("ballX", ballX, "Error sending ballX to client.");
-                                        //send_update("ballY", ballY, "Error sending ballY to client.");
-                                        //send_update("dx", dx, "Error sending dx to client.");
-                                        //send_update("dy", dy, "Error sending dy to client.");
+                    //send_update("ballX", ballX, "Error sending ballX to client.");
+                    //send_update("ballY", ballY, "Error sending ballY to client.");
+                    //send_update("dx", dx, "Error sending dx to client.");
+                    //send_update("dy", dy, "Error sending dy to client.");
 				} else {
                     pthread_mutex_lock(&padRY_lock);
 					padRY++; 
                     pthread_mutex_unlock(&padRY_lock);
       				send_update("padRY", padRY, "Error sending padRY to host."); 
-                                        //send_update("ballX", ballX, "Error sending ballX to client.");
-                                        //send_update("ballY", ballY, "Error sending ballY to client.");
-                                        //send_update("dx", dx, "Error sending dx to client.");
-                                        //send_update("dy", dy, "Error sending dy to client.");
+                    //send_update("ballX", ballX, "Error sending ballX to client.");
+                    //send_update("ballY", ballY, "Error sending ballY to client.");
+                    //send_update("dx", dx, "Error sending dx to client.");
+                    //send_update("dy", dy, "Error sending dy to client.");
 				}
 	        	break;
             /*case 'w': padLY--;
@@ -539,10 +549,10 @@ void *listenUpdate(void *args) {
         char val[MAX_SIZE];
 
         sscanf(update, "%s %s", var_name, val);  
-        printLog("update:");
+        /*printLog("update:");
         printLog(string(update));
         printLog(string(val));
-        printLog(string(var_name));
+        printLog(string(var_name));*/
         int val_int = stoi(val);
 
         if (strcmp(var_name, "ballX") == 0) {
@@ -581,7 +591,7 @@ void *listenUpdate(void *args) {
 			PLAYED_ROUNDS = val_int; 
 			pthread_mutex_unlock(&played_rounds_lock); 
 
-			// Update scoreL 
+            // Update scoreL 
 			pthread_mutex_lock(&scoreL_lock);
             scoreL = 0;
             pthread_mutex_unlock(&scoreL_lock);
