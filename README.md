@@ -2,12 +2,12 @@
 Creating a Network Pong Game :) 
 
 ## Included file names
-netpong.cpp - contains both host and client handlers
-Makefile - compliation 
+*netpong.cpp - contains both host and client handlers
+*Makefile - compliation 
 
 ## Example commands to run code 
-User Host: ./netpong --host <portnum>
-User Client: ./netpong student<num>.cse.nd.edu <portnum>
+*User Host: ./netpong --host <portnum>
+*User Client: ./netpong student<num>.cse.nd.edu <portnum>
 
 ## Tasks
 - [x] Set up basic communication between server and client 
